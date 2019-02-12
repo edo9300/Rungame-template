@@ -234,6 +234,9 @@ int main(int argc, char **argv) {
 	gamebootstrap = (datapath + "bootstrap.ini");
 	LoadSettings();	
 	if (keys&KEY_A) {
+		for (int i = 0; i < 30; i++) {
+			swiWaitForVBlank();
+		}
 		displayInit();
 		menu mainmenu;
 		mainmenu.AddOption("Set target bootstrap");
