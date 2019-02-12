@@ -67,7 +67,7 @@ bool dirEntryPredicate (const DirEntry& lhs, const DirEntry& rhs) {
 	return strcasecmp(lhs.name.c_str(), rhs.name.c_str()) < 0;
 }
 
-void getDirectoryContents (vector<DirEntry>& dirContents, const vector<string> extensionList) {
+void getDirectoryContents (vector<DirEntry>& dirContents, const vector<string>& extensionList, bool folder_only = false) {
 	struct stat st;
 
 	dirContents.clear();
@@ -87,9 +87,13 @@ void getDirectoryContents (vector<DirEntry>& dirContents, const vector<string> e
 			stat(pent->d_name, &st);
 			dirEntry.name = pent->d_name;
 			dirEntry.isDirectory = (st.st_mode & S_IFDIR) ? true : false;
-
-			if (dirEntry.name.compare(".") != 0 && (dirEntry.isDirectory || nameEndsWith(dirEntry.name, extensionList))) {
-				dirContents.push_back (dirEntry);
+			if (folder_only) {
+				if (dirEntry.isDirectory)
+					dirContents.push_back (dirEntry);
+			} else {
+				if (dirEntry.name.compare(".") != 0 && (dirEntry.isDirectory || nameEndsWith(dirEntry.name, extensionList))) {
+					dirContents.push_back (dirEntry);
+				}
 			}
 
 		}
@@ -98,11 +102,6 @@ void getDirectoryContents (vector<DirEntry>& dirContents, const vector<string> e
 	}
 
 	sort(dirContents.begin(), dirContents.end(), dirEntryPredicate);
-}
-
-void getDirectoryContents (vector<DirEntry>& dirContents) {
-	vector<string> extensionList;
-	getDirectoryContents (dirContents, extensionList);
 }
 
 void showDirectoryContents (const vector<DirEntry>& dirContents, int startRow) {
@@ -145,6 +144,81 @@ void showDirectoryContents (const vector<DirEntry>& dirContents, int startRow) {
 		}
 	}
 }
+
+string browseForFolder () {
+	int pressed = 0;
+	int screenOffset = 0;
+	int fileOffset = 0;
+	vector<DirEntry> dirContents;
+
+	getDirectoryContents (dirContents, {}, true);
+	showDirectoryContents (dirContents, screenOffset);
+
+	while (true) {
+		// Clear old cursors
+		for (int i = ENTRIES_START_ROW; i < ENTRIES_PER_SCREEN + ENTRIES_START_ROW; i++) {
+			iprintf ("\x1b[%d;0H ", i);
+		}
+		// Show cursor
+		iprintf ("\x1b[%d;0H*", fileOffset - screenOffset + ENTRIES_START_ROW);
+
+		// Power saving loop. Only poll the keys once per frame and sleep the CPU if there is nothing else to do
+		do {
+			scanKeys();
+			pressed = keysDownRepeat();
+			swiWaitForVBlank();
+		} while (!pressed);
+
+		if (pressed & KEY_UP) 		fileOffset -= 1;
+		if (pressed & KEY_DOWN) 	fileOffset += 1;
+		if (pressed & KEY_LEFT) 	fileOffset -= ENTRY_PAGE_LENGTH;
+		if (pressed & KEY_RIGHT)	fileOffset += ENTRY_PAGE_LENGTH;
+
+		if (fileOffset < 0) 	fileOffset = dirContents.size() - 1;		// Wrap around to bottom of list
+		if (fileOffset > ((int)dirContents.size() - 1))		fileOffset = 0;		// Wrap around to top of list
+
+		// Scroll screen if needed
+		if (fileOffset < screenOffset) 	{
+			screenOffset = fileOffset;
+			showDirectoryContents (dirContents, screenOffset);
+		}
+		if (fileOffset > screenOffset + ENTRIES_PER_SCREEN - 1) {
+			screenOffset = fileOffset - ENTRIES_PER_SCREEN + 1;
+			showDirectoryContents (dirContents, screenOffset);
+		}
+
+		if (pressed & KEY_A) {
+			DirEntry* entry = &dirContents.at(fileOffset);
+			iprintf("Entering directory\n");
+			// Enter selected directory
+			chdir (entry->name.c_str());
+			getDirectoryContents (dirContents, {}, true);
+			screenOffset = 0;
+			fileOffset = 0;
+			showDirectoryContents (dirContents, screenOffset);
+		}
+
+		if (pressed & KEY_B) {
+			// Go up a directory
+			chdir ("..");
+			getDirectoryContents (dirContents, {}, true);
+			screenOffset = 0;
+			fileOffset = 0;
+			showDirectoryContents (dirContents, screenOffset);
+		}
+		
+		if (pressed & KEY_X) {
+			// Clear the screen
+			iprintf ("\x1b[2J");
+			// Return the chosen file
+			char cwd[PATH_MAX];
+			getcwd(cwd, PATH_MAX);
+			std::string full_path(cwd);
+			return full_path;
+		}
+	}
+}
+
 
 string browseForFile (const vector<string>& extensionList) {
 	int pressed = 0;

@@ -28,9 +28,12 @@
 #include <string.h>
 #include <unistd.h>
 
+#include <vector>
+
 #include "nds_loader_arm9.h"
 #include "file_browse.h"
 #include "inifile.h"
+#include "menu.h"
 
 char tmpdatapath[]="sd:/kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk";
 std::string datapath;
@@ -40,13 +43,6 @@ std::string gamebootstrap;
 std::string bootstrappath;
 std::string bootstrapversion;
 
-typedef struct {
-	char gameTitle[12];			//!< 12 characters for the game title.
-	char gameCode[4];			//!< 4 characters for the game code.
-} sNDSHeadertitlecodeonly;
-
-static bool soundfreq = false;	// false == 32.73 kHz, true == 47.61 kHz
-
 PrintConsole upperScreen;
 PrintConsole lowerScreen;
 
@@ -55,6 +51,12 @@ void displayInit() {
 	videoSetMode(MODE_0_2D);
 	vramSetBankA(VRAM_A_MAIN_BG);
 	consoleInit(&upperScreen, 3, BgType_Text4bpp, BgSize_T_256x256, 31, 0, true, true);
+}
+
+std::string GetRomName(const std::string& file) {
+	auto pos1 = file.find_last_of("/");
+	auto pos2 = file.find_last_of(".");
+	return file.substr(pos1, pos2-pos1);
 }
 
 std::string ReplaceAll(std::string str, const std::string& from, const std::string& to) {
@@ -67,7 +69,6 @@ std::string ReplaceAll(std::string str, const std::string& from, const std::stri
 }
 
 void SetTargetBootstrap() {
-	displayInit();
 	std::string filename;
 	std::vector<std::string> extensionList={".nds"};
 	
@@ -90,8 +91,6 @@ void SetTargetBootstrap() {
 }
 
 void SetTargetRom() {
-	displayInit();
-	std::string filename;
 	std::vector<std::string> extensionList={".nds"};
 	consoleSelect(&upperScreen);
 	consoleClear();
@@ -104,7 +103,22 @@ void SetTargetRom() {
 	bootstrap_template.SetString( "NDS-BOOTSTRAP", "NDS_PATH", ndsPath.c_str());
 	savePath = ReplaceAll(ndsPath, ".nds", ".sav");
 	bootstrap_template.SetString( "NDS-BOOTSTRAP", "SAV_PATH", savePath.c_str());
-	soundfreq = bootstrap_template.GetInt("NDS-BOOTSTRAP", "SOUND_FIX", 0);
+	bootstrap_template.SaveIniFile(gamebootstrap.c_str());
+	bootstrap_template.SaveIniFile((bootstrappath+"nds-bootstrap.ini").c_str());
+}
+
+void SetSavePath() {
+	consoleSelect(&upperScreen);
+	consoleClear();
+	iprintf("Select the folder where the save will be stored\n");
+	iprintf("Press X once you are in the desired folder");
+	consoleSelect(&lowerScreen);
+	chdir("/");
+	ndsPath = browseForFolder();
+	CIniFile bootstrap_template;
+	bootstrap_template.LoadIniFile(gamebootstrap.c_str());
+	savePath = GetRomName(ndsPath)+".sav";
+	bootstrap_template.SetString( "NDS-BOOTSTRAP", "SAV_PATH", savePath.c_str());
 	bootstrap_template.SaveIniFile(gamebootstrap.c_str());
 	bootstrap_template.SaveIniFile((bootstrappath+"nds-bootstrap.ini").c_str());
 }
@@ -114,17 +128,21 @@ void LoadSettings(void) {
 	if(configini.LoadIniFile((datapath + "config.ini").c_str())) {
 		bootstrappath = configini.GetString( "NDS-FORWARDER", "BOOTSTRAP_PATH", "");
 		bootstrapversion = configini.GetString( "NDS-FORWARDER", "BOOTSTRAP_VERSION", "");
-	} else
+	} else {
+		displayInit();
 		SetTargetBootstrap();
+	}
 	
 	CIniFile settingsini;
 	if(settingsini.LoadIniFile(gamebootstrap.c_str())) {
-		soundfreq = settingsini.GetInt("NDS-BOOTSTRAP", "SOUND_FIX", 0);
 		ndsPath = settingsini.GetString( "NDS-BOOTSTRAP", "NDS_PATH", "");
 		savePath = settingsini.GetString( "NDS-BOOTSTRAP", "SAV_PATH", "");
 		settingsini.SaveIniFile((bootstrappath+"nds-bootstrap.ini").c_str());
-	} else
+	} else {
+		displayInit();
 		SetTargetRom();
+		SetSavePath();
+	}
 }
 
 //---------------------------------------------------------------------------------
@@ -136,16 +154,19 @@ void stop (void) {
 }
 
 int lastRanROM() {
-	if(soundfreq) fifoSendValue32(FIFO_USER_07, 2);
-	else fifoSendValue32(FIFO_USER_07, 1);
-	
 	char game_TID[5];
 	FILE *f_nds_file = fopen(ndsPath.c_str(), "rb");
+	typedef struct {
+		char gameTitle[12];			//!< 12 characters for the game title.
+		char gameCode[4];			//!< 4 characters for the game code.
+	} sNDSHeadertitlecodeonly;
 	fseek(f_nds_file, offsetof(sNDSHeadertitlecodeonly, gameCode), SEEK_SET);
 	fread(game_TID, 1, 4, f_nds_file);
 	game_TID[4] = 0;
 	game_TID[3] = 0;
 	fclose(f_nds_file);
+	std::vector<char*> argarray;
+	argarray.push_back(strdup((bootstrappath+bootstrapversion).c_str()));
 	if (access(savePath.c_str(), F_OK) && strcmp(game_TID, "###") != 0) {
 		displayInit();
 		consoleSelect(&lowerScreen);
@@ -188,7 +209,7 @@ int lastRanROM() {
 			swiWaitForVBlank();
 		}
 	}
-	return runNdsFile ((bootstrappath+bootstrapversion).c_str(), 0, NULL, true);
+	return runNdsFile (argarray[0], argarray.size(), (const char **)&argarray[0], true);
 }
 
 //---------------------------------------------------------------------------------
@@ -211,17 +232,28 @@ int main(int argc, char **argv) {
 	int keys = keysDown();
 	datapath=tmpdatapath;
 	gamebootstrap = (datapath + "bootstrap.ini");
+	LoadSettings();	
 	if (keys&KEY_A) {
-		SetTargetBootstrap();
-		SetTargetRom();
-	} else
-		LoadSettings();	
+		displayInit();
+		menu mainmenu;
+		mainmenu.AddOption("Set target bootstrap");
+		mainmenu.AddOption("Set target rom");
+		mainmenu.AddOption("Set save folder");
+		mainmenu.AddOption("Start");
+		int ret = -1;
+		while((ret = mainmenu.DoMenu(&lowerScreen)) != 3) {
+			if (ret==0)
+				SetTargetBootstrap();
+			else if (ret==1)
+				SetTargetRom();
+			else if (ret==2)
+				SetSavePath();
+		}
+	}
 	
 	swiWaitForVBlank();
 
 	fifoWaitValue32(FIFO_USER_06);
-
-	fifoSendValue32(FIFO_USER_07, 0);
 
 	int err = lastRanROM();
 	displayInit();
