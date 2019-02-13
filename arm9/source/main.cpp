@@ -227,11 +227,11 @@ int main(int argc, char **argv) {
 		stop();
 	}
 	
-	scanKeys();
-	int keys = keysDown();
 	datapath=tmpdatapath;
 	gamebootstrap = (datapath + "bootstrap.ini");
-	LoadSettings();	
+	LoadSettings();
+	scanKeys();
+	int keys = keysDown();
 	if (keys&KEY_A) {
 		for (int i = 0; i < 30; i++) {
 			swiWaitForVBlank();
