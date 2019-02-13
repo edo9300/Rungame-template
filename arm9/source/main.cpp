@@ -114,10 +114,9 @@ void SetSavePath() {
 	iprintf("Press X once you are in the desired folder");
 	consoleSelect(&lowerScreen);
 	chdir("/");
-	ndsPath = browseForFolder();
+	savePath = browseForFolder() + "/" + GetRomName(ndsPath) + ".sav";
 	CIniFile bootstrap_template;
 	bootstrap_template.LoadIniFile(gamebootstrap.c_str());
-	savePath = GetRomName(ndsPath)+".sav";
 	bootstrap_template.SetString( "NDS-BOOTSTRAP", "SAV_PATH", savePath.c_str());
 	bootstrap_template.SaveIniFile(gamebootstrap.c_str());
 	bootstrap_template.SaveIniFile((bootstrappath+"nds-bootstrap.ini").c_str());
@@ -141,7 +140,7 @@ void LoadSettings(void) {
 	} else {
 		displayInit();
 		SetTargetRom();
-		SetSavePath();
+		//SetSavePath();
 	}
 }
 
