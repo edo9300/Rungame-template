@@ -54,7 +54,7 @@ void displayInit() {
 }
 
 std::string GetRomName(const std::string& file) {
-	auto pos1 = file.find_last_of("/");
+	auto pos1 = file.find_last_of("/") + 1;
 	auto pos2 = file.find_last_of(".");
 	return file.substr(pos1, pos2-pos1);
 }
